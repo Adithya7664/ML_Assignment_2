@@ -78,7 +78,9 @@ def run_pipeline():
         })
 
     set_section("data_processing")
-    add_text("Loading datasets...")
+    add_text("### Goal: Merge the 6 CSV tables into a unified patient-level dataset and perform EDA.")
+    add_text("### Target: Multi-label classification - predict which diseases a patient has (output = binary vector).")
+    # add_text("Loading datasets...")
     patients = pd.read_csv('csv/patients.csv', on_bad_lines='skip')
     conditions = pd.read_csv('csv/conditions.csv', on_bad_lines='skip')
     conditions = conditions.loc[:, ~conditions.columns.str.startswith('Unnamed')]
@@ -86,13 +88,13 @@ def run_pipeline():
     medications = pd.read_csv('csv/medications.csv', on_bad_lines='skip')
     procedures = pd.read_csv('csv/procedures.csv', on_bad_lines='skip')
 
-    add_text(f"patients:    {patients.shape}")
-    add_text(f"conditions:  {conditions.shape}")
-    add_text(f"encounters:  {encounters.shape}")
-    add_text(f"medications: {medications.shape}")
-    add_text(f"procedures:  {procedures.shape}")
-    add_text(f"\nPatients columns: {list(patients.columns)}")
-    add_text(f"Conditions columns: {list(conditions.columns)}")
+    data_shapes = {
+        "Dataset": ["Patients", "Conditions", "Encounters", "Medications", "Procedures"],
+        "Rows": [patients.shape[0], conditions.shape[0], encounters.shape[0], medications.shape[0], procedures.shape[0]],
+        "Columns": [patients.shape[1], conditions.shape[1], encounters.shape[1], medications.shape[1], procedures.shape[1]]
+    }
+    add_text("#### Initial Dataset Dimensions")
+    add_dataframe(pd.DataFrame(data_shapes))
 
     # %% [markdown]
     # ## 2. Feature Extraction
@@ -109,8 +111,9 @@ def run_pipeline():
                                 'IS_ALIVE']].copy()
     patient_features.rename(columns={'Id': 'PATIENT'}, inplace=True)
 
-    add_text(f"Patient features: {patient_features.shape}")
-    add_dataframe(patient_features)
+    add_text(f"### Patient Features Extraction")
+    add_text(f"Extracted demographic features for {patient_features.shape[0]} patients. The resulting feature set contains {patient_features.shape[1]} columns.")
+    add_dataframe(patient_features.head())
 
     # %% [markdown]
     # ### 2.2 Multi-Label Disease Target (from Conditions)
@@ -138,31 +141,30 @@ def run_pipeline():
     target_df = pd.DataFrame({'PATIENT': all_patients})
 
     # print("Disease group patient counts:")
-    add_text("Disease group patient counts:")
+    disease_stats = []
     for group, keywords in disease_groups.items():
         mask = conditions['DESCRIPTION'].str.lower().apply(
             lambda x: any(kw in str(x) for kw in keywords)
         )
         positive_patients = set(conditions.loc[mask, 'PATIENT'].unique())
         target_df[f'TARGET_{group}'] = target_df['PATIENT'].isin(positive_patients).astype(int)
-        # print(f"  {group}: {target_df[f'TARGET_{group}'].sum()} patients")
-        add_text(f"  {group}: {target_df[f'TARGET_{group}'].sum()} patients")
+        disease_stats.append({"Disease Group": group, "Patient Count": target_df[f'TARGET_{group}'].sum()})
+    
+    add_text("#### Disease Group Patient Counts")
+    add_dataframe(pd.DataFrame(disease_stats))
 
     # Drop disease groups with too few patients (< 5)
     target_cols = [c for c in target_df.columns if c.startswith('TARGET_')]
     drop_cols = [c for c in target_cols if target_df[c].sum() < 5]
     if drop_cols:
-        print(f"\nDropped (< 5 patients): {[c.replace('TARGET_', '') for c in drop_cols]}")
+        add_text(f"\nDropped (< 5 patients): {[c.replace('TARGET_', '') for c in drop_cols]}")
         target_df.drop(columns=drop_cols, inplace=True)
 
     # Summary
     target_cols = [c for c in target_df.columns if c.startswith('TARGET_')]
     target_df['HAS_ANY_DISEASE'] = (target_df[target_cols].sum(axis=1) > 0).astype(int)
     target_df['NUM_DISEASES'] = target_df[target_cols].sum(axis=1)
-    # print(f"\nPatients with any disease: {target_df['HAS_ANY_DISEASE'].sum()} / {len(target_df)}")
-    # print(f"Max diseases per patient: {target_df['NUM_DISEASES'].max()}")
-    add_text(f"\nPatients with any disease: {target_df['HAS_ANY_DISEASE'].sum()} / {len(target_df)}")
-    add_text(f"Max diseases per patient: {target_df['NUM_DISEASES'].max()}")
+    add_text(f"Successfully identified patients with conditions. {target_df['HAS_ANY_DISEASE'].sum()} patients have at least one disease, with a maximum of {target_df['NUM_DISEASES'].max()} diseases per patient.")
 
     # %% [markdown]
     # ### 2.3 Clinical Observations
@@ -206,7 +208,7 @@ def run_pipeline():
         'DALY': 'daly', 'QALY': 'qaly', 'QOLS': 'qols',
     }
 
-    add_text("Processing observations (chunked reading)...")
+    # add_text("Processing observations (chunked reading)...")
     chunks = []
     for i, chunk in enumerate(pd.read_csv('csv/observations.csv', chunksize=200000, on_bad_lines='skip')):
         numeric = chunk[chunk['TYPE'] == 'numeric'].copy()
@@ -215,11 +217,12 @@ def run_pipeline():
         filtered = numeric[numeric['DESCRIPTION'].isin(key_obs)]
         if len(filtered) > 0:
             chunks.append(filtered[['PATIENT', 'DESCRIPTION', 'VALUE']])
-        add_text(f"  Chunk {i+1}/8 processed...")
+        # add_text(f"  Chunk {i+1}/8 processed...")
 
     obs_data = pd.concat(chunks, ignore_index=True)
     obs_data['DESCRIPTION'] = obs_data['DESCRIPTION'].map(short_names)
-    add_text(f"\nFiltered observations: {len(obs_data):,} rows, {obs_data.PATIENT.nunique()} patients")
+    add_text(f"### Filtered Clinical Observations")
+    add_text(f"Processed observation data, resulting in {len(obs_data):,} rows for {obs_data.PATIENT.nunique()} patients.")
 
     # Aggregate per patient: mean and std
     obs_agg = obs_data.groupby(['PATIENT', 'DESCRIPTION'])['VALUE'].agg(['mean', 'std']).reset_index()
@@ -231,7 +234,8 @@ def run_pipeline():
     obs_std.columns = [f'{c}_std' for c in obs_std.columns]
     obs_features = obs_mean.join(obs_std).reset_index()
 
-    add_text(f"Observation features: {obs_features.shape}")
+    add_text(f"#### Observation Features Summary")
+    add_text(f"Generated mean and standard deviation features for clinical observations. Total features: {obs_features.shape[1]}.")
     add_dataframe(obs_features.head())
 
     # %% [markdown]
@@ -253,7 +257,8 @@ def run_pipeline():
     enc_types.columns = [f'enc_{c}' for c in enc_types.columns]
     enc_types = enc_types.reset_index()
     encounter_features = encounter_features.merge(enc_types, on='PATIENT', how='left')
-    add_text(f"Encounter features: {encounter_features.shape}")
+    add_text(f"#### Encounter Features Summary")
+    add_text(f"Extracted {encounter_features.shape[1]} features from patient encounter history.")
 
     # %%
     med_features = medications.groupby('PATIENT').agg(
@@ -262,7 +267,8 @@ def run_pipeline():
         total_med_cost=('TOTALCOST', 'sum'),
         avg_dispenses=('DISPENSES', 'mean'),
     ).reset_index()
-    add_text(f"Medication features: {med_features.shape}")
+    add_text(f"#### Medication Features Summary")
+    add_text(f"Extracted {med_features.shape[1]} features from medication records.")
 
     # %%
     proc_features = procedures.groupby('PATIENT').agg(
@@ -270,7 +276,8 @@ def run_pipeline():
         unique_procedures=('DESCRIPTION', 'nunique'),
         total_proc_cost=('BASE_COST', 'sum'),
     ).reset_index()
-    add_text(f"Procedure features: {proc_features.shape}")
+    add_text(f"#### Procedure Features Summary")
+    add_text(f"Extracted {proc_features.shape[1]} features from medical procedures.")
 
     # %% [markdown]
     # ## 3. Merge into Unified Patient-Level Dataset
@@ -300,11 +307,12 @@ def run_pipeline():
         if col in df.columns:
             df[col] = df[col].fillna(0)
 
-    add_text(f"   Merged dataset shape: {df.shape}")
-    add_text(f"   Patients: {len(df)}")
-    add_text(f"   Features: {df.shape[1] - len(target_cols) - 3}")  # minus targets, PATIENT, HAS_ANY, NUM
-    add_text(f"   Target diseases: {len(target_cols)}")
-    add_text(f"\nColumn names:\n{list(df.columns)}")
+    merged_summary = {
+        "Metric": ["Total Patients", "Total Columns", "Feature Columns", "Target Diseases"],
+        "Value": [len(df), df.shape[1], df.shape[1] - len(target_cols) - 3, len(target_cols)]
+    }
+    add_text("#### Merged Dataset Summary")
+    add_dataframe(pd.DataFrame(merged_summary))
 
     # %% [markdown]
     # ## 4. Exploratory Data Analysis
@@ -314,12 +322,11 @@ def run_pipeline():
 
     # %%
     # Print basic structure, shapes and column types of the merged dataset
-    add_text("="*60)
-    add_text("DATASET OVERVIEW")
-    add_text("="*60)
-    add_text(f"\nShape: {df.shape}")
-    add_text(f"\nData types:\n{df.dtypes.value_counts()}")
-    add_text(f"\nNumeric feature statistics:")
+    add_text("### Dataset Overview")
+    add_text(f"The final merged dataset contains **{df.shape[0]}** patients and **{df.shape[1]}** columns.")
+    add_text("#### Data Types Distribution")
+    add_dataframe(df.dtypes.value_counts().reset_index().rename(columns={"index": "Data Type", 0: "Count"}))
+    add_text("#### Numeric Feature Statistics")
     add_dataframe(df.describe().round(2))
 
     # %%
@@ -329,9 +336,8 @@ def run_pipeline():
     missing_df = pd.DataFrame({'Missing': missing, 'Percent': missing_pct})
     missing_df = missing_df[missing_df['Missing'] > 0].sort_values('Percent', ascending=False)
 
-    add_text(f"Columns with missing values: {len(missing_df)} / {len(df.columns)}")
-    add_text(f"Missing value percentages:")
-    add_text(missing_df.head(20).to_string())
+    add_text(f"#### Missing Values (Top 20 Columns)")
+    add_dataframe(missing_df.head(20).reset_index().rename(columns={"index": "Column"}))
 
     fig, ax = plt.subplots(figsize=(12, 6))
     if len(missing_df) > 0:
@@ -380,8 +386,8 @@ def run_pipeline():
     add_plot(fig)
 
     # Ethnicity
-    add_text("Ethnicity distribution:")
-    add_text(df['ETHNICITY'].value_counts().to_string())
+    add_text("#### Ethnicity Distribution")
+    add_dataframe(df['ETHNICITY'].value_counts().reset_index().rename(columns={"index": "Ethnicity", "ETHNICITY": "Count"}))
 
     # %% [markdown]
     # ### 4.3 Target Disease Distribution
@@ -600,10 +606,11 @@ def run_pipeline():
 
     # %%
     # Displays the first 5 rows of the final dataset
-    df_model
+    # df_model
 
 
     # %%
+    add_text("### Pre-Split Merged Dataset Preview")
     merged_df=pd.read_csv('merged_dataset_with_ids.csv')
     add_dataframe(merged_df.head())
 
@@ -621,6 +628,7 @@ def run_pipeline():
     final_df = merged_df.merge(last_enc, on="PATIENT", how="left")
 
     # %%
+    add_text("### Final Merged Dataset Preview (with Last Visit Date)")
     add_dataframe(final_df.head())
 
     # %%
@@ -681,9 +689,8 @@ def run_pipeline():
             add_text(f"Skipping {target} (Insufficient positive cases: DS1={pos_cases_ds1}, DS2={pos_cases_ds2})")
             continue
             
-        add_text(f"\n{'='*60}")
-        add_text(f"Analyzing Target: {target} (DS1 Positives: {pos_cases_ds1})")
-        add_text(f"{'='*60}")
+        add_text(f"### Analyzing Target: {target}")
+        add_text(f"This model focuses on predicting **{target}**. Dataset 1 contains **{pos_cases_ds1}** positive cases for this condition.")
         
         # split data
         X1_train, X1_test, y1_train, y1_test = train_test_split(X1_raw, y1, test_size=0.2, random_state=42, stratify=y1)
@@ -734,9 +741,14 @@ def run_pipeline():
         prec_cl = precision_score(y2_test, pred_cl, zero_division=0)
         rec_cl = recall_score(y2_test, pred_cl, zero_division=0)
         
-        add_text(f"  DS1 Baseline     -> F1: {f1_ds1:.4f} | Acc: {acc_ds1:.4f} | Prec: {prec_ds1:.4f} | Rec: {rec_ds1:.4f}")
-        add_text(f"  DS2 Baseline     -> F1: {f1_ds2:.4f} | Acc: {acc_ds2:.4f} | Prec: {prec_ds2:.4f} | Rec: {rec_ds2:.4f}")
-        add_text(f"  ** DS2 Fine-Tuned (CL) -> F1: {f1_cl:.4f} | Acc: {acc_cl:.4f} | Prec: {prec_cl:.4f} | Rec: {rec_cl:.4f} **")
+        metrics_df = pd.DataFrame({
+            "Metric": ["F1-Score", "Accuracy", "Precision", "Recall"],
+            "DS1 Baseline": [f1_ds1, acc_ds1, prec_ds1, rec_ds1],
+            "DS2 Baseline": [f1_ds2, acc_ds2, prec_ds2, rec_ds2],
+            "DS2 Fine-Tuned (CL)": [f1_cl, acc_cl, prec_cl, rec_cl]
+        })
+        add_text(f"#### Performance Metrics: {target}")
+        add_dataframe(metrics_df.round(4))
         
         all_metrics.append({'Disease': target, 'DS1_F1': f1_ds1, 'DS2_Base_F1': f1_ds2, 'DS2_CL_F1': f1_cl})
         trained_models[target] = cl_svm
@@ -831,11 +843,10 @@ def run_pipeline():
     add_plot(fig)
 
 
-    # %% [markdown]
-    # ### 5.2 SVM Results Summary
-    # - the f1 scores are generally very low across most targets for the svm
-    # - this is expected since the dataset is highly imbalanced and non-linear, so a linear model like sgdclassifier inherently suffers from high bias here
-    # - however, continual learning worked well. as seen in the roc curves (like for obesity and dental), the auc improved after fine-tuning on the newer dataset 2 data
+    add_text("### SVM Results Summary")
+    add_text("- The F1 scores are generally very low across most targets for the SVM.")
+    add_text("- This is expected since the dataset is highly imbalanced and non-linear, so a linear model like SGDClassifier inherently suffers from high bias here.")
+    add_text("- However, continual learning worked well. As seen in the ROC curves (like for obesity and dental), the AUC improved after fine-tuning on the newer dataset 2 data.")
     # 
 
     set_section("decision_tree")
@@ -865,15 +876,25 @@ def run_pipeline():
     split_date = final_df['last_visit_date'].quantile(0.7)
     dataset1 = final_df[final_df['last_visit_date'] <= split_date].copy()
     dataset2 = final_df[final_df['last_visit_date'] >  split_date].copy()
-    add_text(f'Dataset 1: {dataset1.shape}  |  Dataset 2: {dataset2.shape}')
+    add_text(f"#### Dataset Temporal Split Dimensions")
+    split_info = pd.DataFrame({
+        "Dataset": ["Dataset 1 (Historical)", "Dataset 2 (Current)"],
+        "Rows": [dataset1.shape[0], dataset2.shape[0]],
+        "Columns": [dataset1.shape[1], dataset2.shape[1]]
+    })
+    add_dataframe(split_info)
 
     TARGET_COLS  = [c for c in final_df.columns if c.startswith('TARGET_')]
     DROP_COLS    = ['PATIENT','last_visit_date','HAS_ANY_DISEASE','NUM_DISEASES'] + TARGET_COLS
     FEATURE_COLS = [c for c in final_df.columns if c not in DROP_COLS]
     CAT_COLS     = [c for c in FEATURE_COLS if final_df[c].dtype == object]
     NUM_COLS     = [c for c in FEATURE_COLS if final_df[c].dtype != object]
-    add_text(f'Features={len(FEATURE_COLS)}  Numeric={len(NUM_COLS)}  Cat={len(CAT_COLS)}')
-    add_text(f'Targets: {TARGET_COLS}')
+    add_text(f"#### Feature and Target Configuration")
+    config_info = pd.DataFrame({
+        "Category": ["Total Features", "Numeric Features", "Categorical Features", "Targets"],
+        "Count": [len(FEATURE_COLS), len(NUM_COLS), len(CAT_COLS), len(TARGET_COLS)]
+    })
+    add_dataframe(config_info)
 
 
     # %%
@@ -908,7 +929,12 @@ def run_pipeline():
     X_train_sc = pd.DataFrame(scaler.fit_transform(X_train_imp), columns=FEATURE_COLS)
     X_test1_sc = pd.DataFrame(scaler.transform(X_test1_imp),     columns=FEATURE_COLS)
     X_test2_sc = pd.DataFrame(scaler.transform(X_test2_imp),     columns=FEATURE_COLS)
-    add_text(f'Train={X_train_sc.shape}  D1-Test={X_test1_sc.shape}  D2-Test={X_test2_sc.shape}')
+    add_text(f"#### Training and Test Set Dimensions")
+    split_dims = pd.DataFrame({
+        "Split": ["Training Set", "D1 Test Set", "D2 Test Set"],
+        "Shape": [str(X_train_sc.shape), str(X_test1_sc.shape), str(X_test2_sc.shape)]
+    })
+    add_dataframe(split_dims)
 
 
     # %% [markdown]
@@ -969,8 +995,8 @@ def run_pipeline():
     r_d1, y_pred_d1 = eval_multilabel(best_dt, X_test1_sc, y_test1, 'Test  (D1)')
     r_d2, y_pred_d2 = eval_multilabel(best_dt, X_test2_sc, y_test2, 'Test  (D2)')
 
-    add_text('=== Tuned Decision Tree ===')
-    add_text(pd.DataFrame([r_d1, r_d2]).to_string(index=False))
+    add_text("### Tuned Decision Tree Results")
+    add_dataframe(pd.DataFrame([r_d1, r_d2]))
 
 
     # %%
@@ -1000,15 +1026,16 @@ def run_pipeline():
         ('D1 Test', y_test1, y_pred_d1),
         ('D2 Test (temporal)', y_test2, y_pred_d2),
     ]:
-        add_text('\n' + '='*55)
-        add_text(f'Per-label Classification Report  — {split_name}')
-        add_text('='*55)
+        add_text(f"### Per-label Classification Report — {split_name}")
         for i, tgt in enumerate(TARGET_COLS):
-            add_text(f'\n  [{tgt.replace("TARGET_","")}]')
-            add_text(classification_report(yt.iloc[:, i], yp[:, i],
-                                        labels=[0, 1], # Added labels parameter here
-                                        target_names=['Neg','Pos'], 
-                                        zero_division=0))
+            add_text(f"#### Target: {tgt.replace('TARGET_','')}")
+            report = classification_report(yt.iloc[:, i], yp[:, i],
+                                         labels=[0, 1],
+                                         target_names=['Negative', 'Positive'],
+                                         zero_division=0,
+                                         output_dict=True)
+            report_df = pd.DataFrame(report).transpose()
+            add_dataframe(report_df.round(4))
 
     # %% [markdown]
     # ### 6.3 Model Complexity & Bias-Variance Trade-off
@@ -1059,8 +1086,8 @@ def run_pipeline():
     r_d2b, yp_d2b       = eval_multilabel(dt_best, X_test2_sc, y_test2,  'Test  (D2)')
 
     best_df = pd.DataFrame([r_d1b, r_d2b])
-    add_text(f'\n=== Best DT (max_depth={best_depth}) ===')
-    add_text(best_df.to_string(index=False))
+    add_text(f"### Best Decision Tree Evaluation (max_depth={best_depth})")
+    add_dataframe(best_df)
 
 
     # %% [markdown]
@@ -1087,8 +1114,8 @@ def run_pipeline():
     add_plot(fig)
 
 
-    add_text('\nTop-20 features:')
-    add_text(top20['mean_importance'].round(5).to_string())
+    add_text("#### Top 20 Global Feature Importances")
+    add_dataframe(top20['mean_importance'].round(5).reset_index().rename(columns={"index": "Feature", "mean_importance": "Importance"}))
 
 
     # %%
@@ -1124,18 +1151,18 @@ def run_pipeline():
     add_plot(fig)
 
 
-    # %% [markdown]
-    # ### 6.5 Summary of Decision Tree Findings
-    # 
-    # | Aspect | Key Observation |
-    # |---|---|
-    # | **Preprocessing** | Median imputation → Label-encoding → StandardScaler |
-    # | **Underfitting** | depth 1-2: high bias, low train & test F1 |
-    # | **Overfitting** | depth ≥7: train F1 ≈ 1.0, test F1 plateaus or drops |
-    # | **Best depth** | Chosen by D1-test F1 — best balance of bias & variance |
-    # | **Temporal gap** | D2-test F1 < D1-test F1, confirming distribution shift over time |
-    # | **Top features** | BMI, SBP, DBP, Glucose, HbA1c, Age dominate |
-    # | **Clinical insight** | High BMI/Glucose predicts Obesity/Diabetes; elevated SBP → Hypertension |
+    add_text("### Summary of Decision Tree Findings")
+    summary_data = [
+        ["Preprocessing", "Median imputation → Label-encoding → StandardScaler"],
+        ["Underfitting", "depth 1-2: high bias, low train & test F1"],
+        ["Overfitting", "depth ≥7: train F1 ≈ 1.0, test F1 plateaus or drops"],
+        ["Best depth", "Chosen by D1-test F1 — best balance of bias & variance"],
+        ["Temporal gap", "D2-test F1 < D1-test F1, confirming distribution shift over time"],
+        ["Top features", "BMI, SBP, DBP, Glucose, HbA1c, Age dominate"],
+        ["Clinical insight", "High BMI/Glucose predicts Obesity/Diabetes; elevated SBP → Hypertension"]
+    ]
+    summary_df = pd.DataFrame(summary_data, columns=["Aspect", "Key Observation"])
+    add_dataframe(summary_df)
     # 
 
     # %%
@@ -1165,7 +1192,7 @@ def run_pipeline():
     # %%
     from sklearn.base import clone
 
-    add_text("=== 6.3 Retraining on Combined Data (Dataset 1 Train + Dataset 2 Train) ===")
+    add_text("### Retraining on Combined Data (Dataset 1 Train + Dataset 2 Train)")
 
     # 1. Split Dataset 2 into train and test sets (using the same 80/20 split)
     d2_train_df, d2_test_df = train_test_split(dataset2, test_size=0.2, random_state=42)
@@ -1193,8 +1220,12 @@ def run_pipeline():
     X_train_comb_sc = pd.DataFrame(scaler_comb.fit_transform(X_train_comb_imp), columns=FEATURE_COLS)
     X_test2_comb_sc = pd.DataFrame(scaler_comb.transform(X_test2_comb_imp), columns=FEATURE_COLS)
 
-    add_text(f"Combined Train shape: {X_train_comb_sc.shape}")
-    add_text(f"Dataset 2 Test shape: {X_test2_comb_sc.shape}")
+    add_text(f"#### Combined Training Split Dimensions")
+    comb_info = pd.DataFrame({
+        "Set": ["Combined Train", "Dataset 2 Test"],
+        "Shape": [str(X_train_comb_sc.shape), str(X_test2_comb_sc.shape)]
+    })
+    add_dataframe(comb_info)
 
     # 6. Clone the previous model (If you used the GridSearchCV earlier, this clones the best estimator)
     # If 'best_dt' is not defined from the previous step, replace 'best_dt' with 'dt_base'
@@ -1207,15 +1238,15 @@ def run_pipeline():
     # 8. Evaluate strictly on Dataset 2's test set
     r_d2_comb, y_pred_d2_comb = eval_multilabel(dt_combined, X_test2_comb_sc, y_test2_comb, 'Test (D2 Combined)')
 
-    add_text('\n=== Retrained Decision Tree Performance ===')
-    add_text(pd.DataFrame([r_d2_comb]).to_string(index=False))
+    add_text("### Retrained Decision Tree Performance Metrics")
+    add_dataframe(pd.DataFrame([r_d2_comb]))
 
 
     set_section("neural_network")
     # %% [markdown]
     # ---
-    # # Model 3: Neural Network (MLP from Scratch)
-    # The following section implements a multi-layer perceptron from scratch using NumPy for multi-label disease classification.
+    add_text("### Model 3: Neural Network (MLP from Scratch)")
+    add_text("The following section implements a multi-layer perceptron from scratch using NumPy for multi-label disease classification.")
     # 
 
     # %%
@@ -1226,7 +1257,7 @@ def run_pipeline():
     num_cols = final_df[features].select_dtypes(include=["int64", "float64"]).columns
     cat_cols = final_df[features].select_dtypes(include=["object"]).columns
     feature_cols=[col for col in final_df.columns if not col in target_cols]
-    num_cols, cat_cols
+    # num_cols, cat_cols
 
     # %%
     X1 = dataset1[feature_cols].copy()
@@ -1240,7 +1271,7 @@ def run_pipeline():
         if c in X1.columns: X1 = X1.drop(columns=[c])
         if c in X2.columns: X2 = X2.drop(columns=[c])
 
-    X1, X2, y1, y2
+    # X1, X2, y1, y2
 
 
     # %%
@@ -1264,7 +1295,7 @@ def run_pipeline():
     X1, X2 = X1.align(X2, join="left", axis=1, fill_value=0)
 
     # %%
-    X1, X2, y1, y2
+    # X1, X2, y1, y2
 
     # %%
     def relu(z):
@@ -1503,19 +1534,24 @@ def run_pipeline():
     acc2 = accuracy(y2_test, y2_pred)
     p2, r2, f2 = precision_recall_f1(y2_test, y2_pred)
 
-    add_text(f"Dataset1 → Accuracy: {acc1}")
-    add_text(f"Dataset1 → Precision, Recall, F1: {p1}, {r1}, {f1_1}")
-
-    add_text(f"Dataset2 → Accuracy: {acc2}")
-    add_text(f"Dataset2 → Precision, Recall, F1: {p2}, {r2}, {f2}")
+    nn_metrics = pd.DataFrame({
+        "Metric": ["Accuracy", "Precision", "Recall", "F1-Score"],
+        "Dataset 1": [acc1, p1, r1, f1_1],
+        "Dataset 2": [acc2, p2, r2, f2]
+    })
+    add_text("#### Neural Network Performance Metrics")
+    add_dataframe(nn_metrics.round(4))
 
     # %%
-    add_text("Positive counts per disease:")
-    add_text(f"{y1_train.sum(axis=0)}")
+    add_text("#### Target Distribution in Training Data (Positive Counts)")
+    counts_df = pd.DataFrame({
+        "Target": TARGET_COLS,
+        "Positive Count": y1_train.sum(axis=0)
+    })
+    add_dataframe(counts_df)
     y_prob = predict_prob(X1_test, W1, b1, W2, b2, W3, b3)
 
-    add_text(f"Max: {y_prob.max()}")
-    add_text(f"Mean: {y_prob.mean()}")
+    add_text(f"Probability distributions in test predictions — Max: {y_prob.max():.4f}, Mean: {y_prob.mean():.4f}")
 
     # %%
 
@@ -1625,12 +1661,15 @@ def run_pipeline():
     acc2_new = accuracy(y2_test, y2_pred_new)
     p2_new, r2_new, f2_new = precision_recall_f1(y2_test, y2_pred_new)
 
-    add_text("After Continual Learning:")
-    add_text(f"Accuracy: {acc2_new}")
-    add_text(f"Precision, Recall, F1: {p2_new}, {r2_new}, {f2_new}")
+    add_text("#### After Continual Learning (NN)")
+    cl_nn_metrics = pd.DataFrame({
+        "Metric": ["Accuracy", "Precision", "Recall", "F1-Score"],
+        "Value": [acc2_new, p2_new, r2_new, f2_new]
+    })
+    add_dataframe(cl_nn_metrics.round(4))
 
     # %%
-    y2_pred_new.sum()
+    # y2_pred_new.sum()
 
     # %%
     y2_prob_new = predict_prob(X2_test, W1_c, b1_c, W2_c, b2_c, W3_c, b3_c)
@@ -1690,7 +1729,10 @@ def run_pipeline():
 
 
 if "results_cache" not in st.session_state:
-    run_pipeline()
+    with st.spinner("Running..."):
+        progress_bar = st.progress(0, text="Pipeline is running...")
+        run_pipeline()
+        progress_bar.progress(100, text="Pipeline complete!")
     st.session_state["results_cache"] = results
 else:
     results = st.session_state["results_cache"]
@@ -1712,6 +1754,7 @@ def render_home_section():
     st.table(group_members_df)
 
 def render_section(section_name):
+    st.header(section_name.replace("_", " ").title())
     for item in results[section_name]:
         if item["type"] == "text":
             st.write(item["content"])
@@ -1725,6 +1768,21 @@ def render_section(section_name):
 
 st.sidebar.title("Controls")
 section = st.sidebar.radio("Navigate", ["Home", "Data Processing", "SVM", "Decision Tree", "Neural Network"])
+
+# Scroll to top when section changes
+st.markdown('<div id="scroll-to-top"></div>', unsafe_allow_html=True)
+st.markdown(
+    """
+    <script>
+        var element = window.parent.document.getElementById('scroll-to-top');
+        if (element) {
+            element.scrollIntoView();
+        }
+        window.parent.document.querySelector('section.main').scrollTo(0, 0);
+    </script>
+    """,
+    unsafe_allow_html=True
+)
 
 if section == "Home":
     render_home_section()

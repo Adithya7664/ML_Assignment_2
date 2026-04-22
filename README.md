@@ -17,5 +17,11 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+## Dashboard
+Run the following command in the terminal:
+```bash
+streamlit run dashboard.py
+```
+
 ## Dataset
 Please download the csv files of the dataset and place them in a folder names csv/ in the working directory
