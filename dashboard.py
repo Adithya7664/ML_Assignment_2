@@ -325,7 +325,7 @@ def run_pipeline():
     add_text("### Dataset Overview")
     add_text(f"The final merged dataset contains **{df.shape[0]}** patients and **{df.shape[1]}** columns.")
     add_text("#### Data Types Distribution")
-    add_dataframe(df.dtypes.value_counts().reset_index().rename(columns={"index": "Data Type", 0: "Count"}))
+    add_dataframe(df.dtypes.astype(str).value_counts().reset_index().rename(columns={"index": "Data Type", "count": "Count", 0: "Count"}))
     add_text("#### Numeric Feature Statistics")
     add_dataframe(df.describe().round(2))
 
@@ -887,8 +887,8 @@ def run_pipeline():
     TARGET_COLS  = [c for c in final_df.columns if c.startswith('TARGET_')]
     DROP_COLS    = ['PATIENT','last_visit_date','HAS_ANY_DISEASE','NUM_DISEASES'] + TARGET_COLS
     FEATURE_COLS = [c for c in final_df.columns if c not in DROP_COLS]
-    CAT_COLS     = [c for c in FEATURE_COLS if final_df[c].dtype == object]
-    NUM_COLS     = [c for c in FEATURE_COLS if final_df[c].dtype != object]
+    CAT_COLS     = [c for c in FEATURE_COLS if not pd.api.types.is_numeric_dtype(final_df[c])]
+    NUM_COLS     = [c for c in FEATURE_COLS if pd.api.types.is_numeric_dtype(final_df[c])]
     add_text(f"#### Feature and Target Configuration")
     config_info = pd.DataFrame({
         "Category": ["Total Features", "Numeric Features", "Categorical Features", "Targets"],
@@ -1241,21 +1241,28 @@ def run_pipeline():
     add_text("### Retrained Decision Tree Performance Metrics")
     add_dataframe(pd.DataFrame([r_d2_comb]))
 
+    # --- Continual Learning Section for dashboard.py ---
 
-    set_section("neural_network")
-    # %% [markdown]
-    # ---
-    add_text("### Model 3: Neural Network (MLP from Scratch)")
-    add_text("The following section implements a multi-layer perceptron from scratch using NumPy for multi-label disease classification.")
-    # 
+    add_text("## Task 4: Continual Learning Implementation (Decision Tree Excluded)")
+
+    add_text("""
+
+Task 4 requires implementing a continual learning strategy by using the model trained on Dataset 1 as an "initial checkpoint" to be fine-tuned on Dataset 2. While this is highly effective for parametric models that use gradient descent (such as Neural Networks and certain SVM implementations), **it is not algorithmically possible for a standard, single Decision Tree.**
+
+In scikit-learn, the DecisionTreeClassifier builds its structure using a greedy, top-down approach. Once the splits are calculated and the tree is grown on Dataset 1, its internal mathematical structure is permanently locked. The algorithm lacks a partial_fit() method because there are no weights to incrementally update. 
+
+Attempting to fit new data (Dataset 2) to an existing Decision Tree will result in catastrophic forgetting, as the .fit() method will completely discard the Dataset 1 checkpoint and train a brand-new tree from scratch. Because a true "checkpoint and fine-tune" strategy cannot be applied to this specific algorithm, the continual learning step is intentionally omitted for the Decision Tree pipeline, and will be demonstrated instead in the Neural Network and SVM sections of this project.
+""")
+
+    add_text("---") # Optional visual separator
 
     # %%
     final_df.to_csv("final_dataset.csv", index=False)
 
     # %%
     features = [col for col in final_df.columns]
-    num_cols = final_df[features].select_dtypes(include=["int64", "float64"]).columns
-    cat_cols = final_df[features].select_dtypes(include=["object"]).columns
+    num_cols = final_df[features].select_dtypes(include=[np.number]).columns
+    cat_cols = final_df[features].select_dtypes(exclude=[np.number]).columns
     feature_cols=[col for col in final_df.columns if not col in target_cols]
     # num_cols, cat_cols
 
@@ -1264,6 +1271,7 @@ def run_pipeline():
     X2 = dataset2[feature_cols].copy()
     y1 = dataset1[target_cols].copy()
     y2 = dataset2[target_cols].copy()
+    nn_target_cols = y1.columns.tolist()
 
     # Safety Drop: Prevent DateTime leakage from crashing the float64 casting in the Neural Network
     leakage_cols = ["last_visit_date", "PATIENT"]
@@ -1275,14 +1283,14 @@ def run_pipeline():
 
 
     # %%
-    num_cols = X1.select_dtypes(include=["int64", "float64"]).columns
+    num_cols = X1.select_dtypes(include=[np.number]).columns
     num_means = X1[num_cols].mean()
 
     X1[num_cols] = X1[num_cols].fillna(num_means)
     X2[num_cols] = X2[num_cols].fillna(num_means)
 
     # %%
-    cat_cols = X1.select_dtypes(include=["object"]).columns
+    cat_cols = X1.select_dtypes(exclude=[np.number]).columns
     cat_modes = X1[cat_cols].mode().iloc[0]
 
     X1[cat_cols] = X1[cat_cols].fillna(cat_modes)
@@ -1446,10 +1454,12 @@ def run_pipeline():
     # %%
     X1_train, X1_test, y1_train, y1_test = train_test_split_scratch(X1.values, y1.values)
     X2_train, X2_test, y2_train, y2_test = train_test_split_scratch(X2.values, y2.values)
-    # valid = np.where(y1_train.sum(axis=0) >= 10)[0]
-    # y1_train = y1_train[:, valid]
-    # y1_test  = y1_test[:, valid]
-    # y2_test  = y2_test[:, valid]
+    valid = np.where(y1_train.sum(axis=0) >= 10)[0]
+    active_nn_target_cols = [nn_target_cols[i] for i in valid]
+    y1_train = y1_train[:, valid]
+    y1_test  = y1_test[:, valid]
+    y2_train = y2_train[:, valid]
+    y2_test  = y2_test[:, valid]
 
     # %%
     X1_train = X1_train.astype(np.float64)
@@ -1463,19 +1473,30 @@ def run_pipeline():
 
     y2_train = y2_train.astype(np.float64)
     y2_test  = y2_test.astype(np.float64)
+    
+    #%%
+    X_mean = X1_train.mean(axis=0)
+    X_std = X1_train.std(axis=0) + 1e-8
 
+    X1_train = (X1_train - X_mean) / X_std
+    X1_test  = (X1_test - X_mean) / X_std
+    X2_train = (X2_train - X_mean) / X_std
+    X2_test  = (X2_test - X_mean) / X_std
+    
     # %%
     W1, b1, W2, b2, W3, b3 = train_mlp(X1_train, y1_train)
+    all_probs = predict_prob(X1_train, W1, b1, W2, b2, W3, b3)
+
     thresholds = []
 
     for i in range(y1_train.shape[1]):
-        probs = predict_prob(X1_train, W1, b1, W2, b2, W3, b3)[:, i]
+        probs = all_probs[:, i]
         labels = y1_train[:, i]
 
         best_f1 = 0
-        best_t = 0.5
+        best_t = 0.2
 
-        for t in np.linspace(0.05, 0.5, 20):
+        for t in np.linspace(0.05, 0.4, 50):
             preds = (probs > t).astype(int)
 
             tp = np.sum((labels==1)&(preds==1))
@@ -1486,6 +1507,11 @@ def run_pipeline():
             recall = tp/(tp+fn+1e-8)
             f1 = 2*precision*recall/(precision+recall+1e-8)
 
+            if precision < 0.05:
+                continue
+
+            if preds.sum() == len(preds):
+                continue
             if f1 > best_f1:
                 best_f1 = f1
                 best_t = t
@@ -1545,7 +1571,7 @@ def run_pipeline():
     # %%
     add_text("#### Target Distribution in Training Data (Positive Counts)")
     counts_df = pd.DataFrame({
-        "Target": TARGET_COLS,
+        "Target": active_nn_target_cols,
         "Positive Count": y1_train.sum(axis=0)
     })
     add_dataframe(counts_df)
@@ -1557,6 +1583,7 @@ def run_pipeline():
 
     y1_prob = predict_prob(X1_test, W1, b1, W2, b2, W3, b3)
 
+    plt.figure(figsize=(8, 6))
     for i in range(y1_test.shape[1]):
 
         fpr, tpr, _ = roc_curve(y1_test[:, i], y1_prob[:, i])
@@ -1576,6 +1603,7 @@ def run_pipeline():
     # %%
     y2_prob = predict_prob(X2_test, W1, b1, W2, b2, W3, b3)
 
+    plt.figure(figsize=(8, 6))
     for i in range(y2_test.shape[1]):
 
         fpr, tpr, _ = roc_curve(y2_test[:, i], y2_prob[:, i])
@@ -1621,18 +1649,16 @@ def run_pipeline():
         return W1, b1, W2, b2, W3, b3
 
     # %%
-    X_mix = np.vstack([X1_train, X2_train])
-    y_mix = np.vstack([y1_train, y2_train])
     W1_c, b1_c, W2_c, b2_c, W3_c, b3_c = train_mlp_continue(
-        X_mix, y_mix,
+        X2_train, y2_train,
         W1, b1, W2, b2, W3, b3,
         epochs=150,
         lr=0.0004
     )
     thresholds_new=[]
-    for i in range(y_mix.shape[1]):
-        probs = predict_prob(X_mix, W1, b1, W2, b2, W3, b3)[:, i]
-        labels = y_mix[:, i]
+    for i in range(y2_train.shape[1]):
+        probs = predict_prob(X2_train, W1, b1, W2, b2, W3, b3)[:, i]
+        labels = y2_train[:, i]
 
         best_f1 = 0
         best_t = 0.5
@@ -1674,6 +1700,7 @@ def run_pipeline():
     # %%
     y2_prob_new = predict_prob(X2_test, W1_c, b1_c, W2_c, b2_c, W3_c, b3_c)
 
+    plt.figure(figsize=(8, 6))
     for i in range(y2_test.shape[1]):
 
         fpr, tpr, _ = roc_curve(y2_test[:, i], y2_prob_new[:, i])
@@ -1684,7 +1711,7 @@ def run_pipeline():
     plt.plot([0,1], [0,1], 'k--')
     plt.xlabel("False Positive Rate")
     plt.ylabel("True Positive Rate")
-    plt.title("ROC Curves (Dataset2)")
+    plt.title("ROC Curves (Dataset2) AFTER CONTINUAL LEARNING")
     plt.legend()
     # plt.show()
     fig = plt.gcf()
@@ -1724,6 +1751,7 @@ def run_pipeline():
         fig = plt.gcf()
         add_plot(fig)
 
+    plot_single_confusion(y1_test, y1_pred)
     plot_single_confusion(y2_test, y2_pred_new)
 
 
