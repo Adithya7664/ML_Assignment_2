@@ -1,22 +1,3 @@
-# %% [markdown]
-# # ML Assignment 2 — Combined Model Notebook
-# 
-# This notebook contains the complete pipeline:
-# 1. **Data Loading & Feature Extraction** (Sections 1–3)
-# 2. **Exploratory Data Analysis** (Section 4)
-# 3. **Data Saving & Temporal Split** (Section 5)
-# 4. **Model 1: Support Vector Machine (SVM)** (Section 6)
-# 5. **Model 2: Decision Tree** (Section 7)
-# 6. **Model 3: Neural Network (MLP from Scratch)** (Section 8)
-# 
-
-# %% [markdown]
-# # ML Assignment 2 — Data Merging & Exploratory Data Analysis
-# 
-# **Goal**: Merge the 6 CSV tables into a unified patient-level dataset and perform EDA.
-# 
-# **Target**: Multi-label classification — predict which diseases a patient has (output = binary vector).
-
 from sklearn.metrics import confusion_matrix
 
 from sklearn.model_selection import train_test_split
@@ -96,12 +77,10 @@ def run_pipeline():
     add_text("#### Initial Dataset Dimensions")
     add_dataframe(pd.DataFrame(data_shapes))
 
-    # %% [markdown]
-    # ## 2. Feature Extraction
-    # ### 2.1 Patient Demographics
+    # Feature Extraction
+    # Patient Demographics
     # Extract: Age, Gender, Race, Ethnicity, Income, Healthcare costs, Alive status
 
-    # %%
     patients['BIRTHDATE'] = pd.to_datetime(patients['BIRTHDATE'], errors='coerce')
     patients['AGE'] = ((pd.Timestamp.now() - patients['BIRTHDATE']).dt.days / 365.25).astype(int)
     patients['IS_ALIVE'] = patients['DEATHDATE'].isna().astype(int)
@@ -115,15 +94,13 @@ def run_pipeline():
     add_text(f"Extracted demographic features for {patient_features.shape[0]} patients. The resulting feature set contains {patient_features.shape[1]} columns.")
     add_dataframe(patient_features.head())
 
-    # %% [markdown]
-    # ### 2.2 Multi-Label Disease Target (from Conditions)
+    # Multi-Label Disease Target (from Conditions)
     # 
     # Group conditions into disease categories. Each patient gets a binary vector
     # indicating which disease groups they have (1) or don't have (0).
     # 
     # Patients NOT in the conditions table are treated as "healthy" (all zeros).
 
-    # %%
     # Disease groups with keyword matching
     disease_groups = {
         'Hypertension': ['hypertension'],
@@ -166,13 +143,9 @@ def run_pipeline():
     target_df['NUM_DISEASES'] = target_df[target_cols].sum(axis=1)
     add_text(f"Successfully identified patients with conditions. {target_df['HAS_ANY_DISEASE'].sum()} patients have at least one disease, with a maximum of {target_df['NUM_DISEASES'].max()} diseases per patient.")
 
-    # %% [markdown]
-    # ### 2.3 Clinical Observations
-    # 
     # The observations file is large (~271MB, 1.5M rows). We read in chunks,
     # filter to key numeric observations, and aggregate per patient (mean, std).
 
-    # %%
     key_obs = [
         'Body Height', 'Body Weight', 'Body mass index (BMI) [Ratio]',
         'Systolic Blood Pressure', 'Diastolic Blood Pressure',
@@ -238,12 +211,9 @@ def run_pipeline():
     add_text(f"Generated mean and standard deviation features for clinical observations. Total features: {obs_features.shape[1]}.")
     add_dataframe(obs_features.head())
 
-    # %% [markdown]
-    # ### 2.4 Encounters, Medications & Procedures
-    # 
+    # Encounters, Medications & Procedures
     # Extract count-based and cost-based features per patient from each table.
 
-    # %%
     encounter_features = encounters.groupby('PATIENT').agg(
         total_encounters=('Id', 'count'),
         unique_enc_types=('ENCOUNTERCLASS', 'nunique'),
@@ -260,7 +230,6 @@ def run_pipeline():
     add_text(f"#### Encounter Features Summary")
     add_text(f"Extracted {encounter_features.shape[1]} features from patient encounter history.")
 
-    # %%
     med_features = medications.groupby('PATIENT').agg(
         total_medications=('CODE', 'count'),
         unique_medications=('DESCRIPTION', 'nunique'),
@@ -270,7 +239,6 @@ def run_pipeline():
     add_text(f"#### Medication Features Summary")
     add_text(f"Extracted {med_features.shape[1]} features from medication records.")
 
-    # %%
     proc_features = procedures.groupby('PATIENT').agg(
         total_procedures=('CODE', 'count'),
         unique_procedures=('DESCRIPTION', 'nunique'),
@@ -279,13 +247,10 @@ def run_pipeline():
     add_text(f"#### Procedure Features Summary")
     add_text(f"Extracted {proc_features.shape[1]} features from medical procedures.")
 
-    # %% [markdown]
-    # ## 3. Merge into Unified Patient-Level Dataset
-    # 
+    # Merge into Unified Patient-Level Dataset
     # Left-join everything onto the patient table so we keep all 2823 patients.
     # Patients without data in a table get NaN (filled appropriately).
 
-    # %%
     # Visualize how many patients have which disease targets
     df = patient_features.copy()
     df = df.merge(target_df, on='PATIENT', how='left')
@@ -314,13 +279,9 @@ def run_pipeline():
     add_text("#### Merged Dataset Summary")
     add_dataframe(pd.DataFrame(merged_summary))
 
-    # %% [markdown]
-    # ## 4. Exploratory Data Analysis
+    # Exploratory Data Analysis
+    # Dataset Overview & Missing Values
 
-    # %% [markdown]
-    # ### 4.1 Dataset Overview & Missing Values
-
-    # %%
     # Print basic structure, shapes and column types of the merged dataset
     add_text("### Dataset Overview")
     add_text(f"The final merged dataset contains **{df.shape[0]}** patients and **{df.shape[1]}** columns.")
@@ -329,7 +290,6 @@ def run_pipeline():
     add_text("#### Numeric Feature Statistics")
     add_dataframe(df.describe().round(2))
 
-    # %%
     # Calculate missing value percentages across all columns
     missing = df.isnull().sum()
     missing_pct = (missing / len(df) * 100).round(1)
@@ -348,10 +308,7 @@ def run_pipeline():
     # plt.show()
     add_plot(fig)
 
-    # %% [markdown]
-    # ### 4.2 Demographics
-
-    # %%
+    # Demographics
     # Plot demographic distributions: Gender, Race, Age, and Income
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
     fig.suptitle('Patient Demographics', fontsize=16, fontweight='bold')
@@ -389,10 +346,7 @@ def run_pipeline():
     add_text("#### Ethnicity Distribution")
     add_dataframe(df['ETHNICITY'].value_counts().reset_index().rename(columns={"index": "Ethnicity", "ETHNICITY": "Count"}))
 
-    # %% [markdown]
-    # ### 4.3 Target Disease Distribution
-
-    # %%
+    # Target Disease Distribution
     # Visualize how many patients have which disease targets
     target_cols = [c for c in df.columns if c.startswith('TARGET_')]
     disease_counts = df[target_cols].sum().sort_values(ascending=True)
@@ -429,7 +383,6 @@ def run_pipeline():
     # plt.show()
     add_plot(fig)
 
-    # %%
     if len(target_cols) > 1:
         cooccurrence = df[target_cols].T.dot(df[target_cols])
         cooccurrence.index = [c.replace('TARGET_', '') for c in cooccurrence.index]
@@ -444,10 +397,7 @@ def run_pipeline():
         fig = plt.gcf()
         add_plot(fig)
 
-    # %% [markdown]
-    # ### 4.4 Clinical Feature Distributions
-
-    # %%
+    # Clinical Feature Distributions
     clinical_mean_cols = [c for c in df.columns if c.endswith('_mean') and not c.startswith('avg_')]
     n_cols = min(len(clinical_mean_cols), 12)
     if n_cols > 0:
@@ -473,10 +423,8 @@ def run_pipeline():
         fig = plt.gcf()
         add_plot(fig)
 
-    # %% [markdown]
-    # ### 4.5 Feature Correlations
+    # Feature Correlations
 
-    # %%
     # Generate a feature-to-feature correlation heatmap to find collinearity
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
     # Remove target columns and ID-like columns for correlation
@@ -498,10 +446,8 @@ def run_pipeline():
         fig = plt.gcf()
         add_plot(fig)
 
-    # %% [markdown]
-    # ### 4.6 Feature-Target Relationships
+    # Feature-Target Relationships
 
-    # %%
     # Compare key observation means between Healthy and Diseased patients
     key_features = ['bmi_mean', 'sbp_mean', 'dbp_mean', 'glucose_mean', 'hba1c_mean', 'heart_rate_mean']
     available_features = [f for f in key_features if f in df.columns]
@@ -526,10 +472,8 @@ def run_pipeline():
         fig = plt.gcf()
         add_plot(fig)
 
-    # %% [markdown]
-    # ### 4.7 Encounter & Utilization Patterns
+    # Encounter & Utilization Patterns
 
-    # %%
     # Compare healthcare utilization (cost/count) between Healthy vs Diseased
     util_features = ['total_encounters', 'total_medications', 'total_procedures',
                     'total_claim_cost', 'total_med_cost', 'total_proc_cost']
@@ -555,12 +499,8 @@ def run_pipeline():
         fig = plt.gcf()
         add_plot(fig)
 
-    # %% [markdown]
-    # ## 5. Save Processed Dataset
-
-    # %%
-    # --- Step 5: Save the processed data for modeling ---
-
+    # Save Processed Dataset
+    # Save the processed data for modeling 
     # Based on the EDA, drop leaky features (utilization, costs) and outcome metrics (DALY, QALY, QOLS)
     leaky_and_outcome_cols = [
         'INCOME', 'HEALTHCARE_EXPENSES', 'HEALTHCARE_COVERAGE', 'IS_ALIVE',
@@ -582,39 +522,10 @@ def run_pipeline():
     add_text(f"Saved merged_dataset_with_ids.csv ({df_clean.shape})")
     add_text(f"Saved merged_dataset.csv ({df_model.shape})")
 
-
-    # %% [markdown]
-    # ## Summary
-    # 
-    # **Merged Dataset**: {df.shape[0]} patients × {df.shape[1]} columns
-    # 
-    # **Feature Groups**:
-    # - Demographics: Age, Gender, Race, Ethnicity, Income, Healthcare costs
-    # - Clinical Observations: BMI, Blood Pressure, Glucose, HbA1c, etc. (mean + std per patient)
-    # - Encounters: Count by type, total costs
-    # - Medications: Count, unique, costs
-    # - Procedures: Count, unique, costs
-    # 
-    # **Target**: Multi-label binary vector for disease groups
-    # 
-    # **Next Steps**:
-    # 1. Handle missing values (imputation)
-    # 2. Encode categoricals (Gender, Race, Ethnicity)
-    # 3. Temporal split into Dataset 1 (Historical) and Dataset 2 (Current)
-    # 4. Train Decision Tree, SVM, Neural Network
-    # 5. Build Streamlit dashboard
-
-    # %%
-    # Displays the first 5 rows of the final dataset
-    # df_model
-
-
-    # %%
     add_text("### Pre-Split Merged Dataset Preview")
     merged_df=pd.read_csv('merged_dataset_with_ids.csv')
     add_dataframe(merged_df.head())
 
-    # %%
     # ensure datetime
     encounters["START"] = pd.to_datetime(encounters["START"], errors="coerce")
 
@@ -627,11 +538,9 @@ def run_pipeline():
     # merge into merged dataset
     final_df = merged_df.merge(last_enc, on="PATIENT", how="left")
 
-    # %%
     add_text("### Final Merged Dataset Preview (with Last Visit Date)")
     add_dataframe(final_df.head())
 
-    # %%
     final_df["last_visit_date"] = pd.to_datetime(final_df["last_visit_date"], errors="coerce")
 
     split_date = final_df["last_visit_date"].quantile(0.7)
@@ -639,28 +548,25 @@ def run_pipeline():
     dataset1 = final_df[final_df["last_visit_date"] <= split_date]
     dataset2 = final_df[final_df["last_visit_date"] > split_date]
 
-    # %%
     # Save the merged dataset to mergedDataset.csv if it doesn't already exist
     import os
 
     output_path = 'mergedDataset.csv'
     if not os.path.exists(output_path):
         df.to_csv(output_path, index=False)
-        add_text(f'✅ Saved merged dataset to {output_path} — shape: {df.shape}')
+        add_text(f'Saved merged dataset to {output_path} — shape: {df.shape}')
     else:
-        add_text(f'ℹ️  {output_path} already exists, skipping save.')
+        add_text(f'ℹ{output_path} already exists, skipping save.')
 
 
-    # %%
 
+    # SVM ----
     set_section("svm")
-    # %% [markdown]
-    # ### 5. Support Vector Machine (SVM) Pipeline
+    # Support Vector Machine (SVM) Pipeline
     # - training individual svms for each target disease
     # - skipping targets with too few positive cases
     # - evaluating on historical and current datasets
     # - using sgdclassifier to allow partial_fit for continual learning
-    # 
 
     # setup vars
     exclude_cols = ['PATIENT', 'last_visit_date', 'HAS_ANY_DISEASE', 'NUM_DISEASES']
@@ -791,20 +697,18 @@ def run_pipeline():
     # final metrics
     add_dataframe(pd.DataFrame(all_metrics))
 
-    # %% [markdown]
-    # ### 5.1 Bias-Variance Tradeoff (Complexity Analysis)
+    # Bias-Variance Tradeoff (Complexity Analysis)
     # - testing different alpha values on the respiratory target to see complexity tradeoff
     # - high alpha leads to underfitting (high bias)
     # - extremely low alpha leads to overfitting (high variance)
-    # 
 
     target = 'TARGET_Respiratory'
     y1_comp = dataset1[target]
 
-        # split data
+    # split data
     X_train_c, X_test_c, y_train_c, y_test_c = train_test_split(X1_raw, y1_comp, test_size=0.2, random_state=42, stratify=y1_comp)
 
-        # scale data
+    # scale data
     comp_imp = SimpleImputer(strategy='median')
     comp_sc = StandardScaler()
 
@@ -843,22 +747,34 @@ def run_pipeline():
     add_plot(fig)
 
 
-    add_text("### SVM Results Summary")
-    add_text("- The F1 scores are generally very low across most targets for the SVM.")
-    add_text("- This is expected since the dataset is highly imbalanced and non-linear, so a linear model like SGDClassifier inherently suffers from high bias here.")
-    add_text("- However, continual learning worked well. As seen in the ROC curves (like for obesity and dental), the AUC improved after fine-tuning on the newer dataset 2 data.")
+    add_text("")
+    add_text("""
+    ## Model Insights
+
+    ### SVM Implementation
+    The pipeline utilizes individual binary classifiers for each disease target, implemented using scikit-learn’s SGDClassifier. This setup enables incremental training via partial_fit, allowing the model to be trained on historical data (Dataset 1) and then fine-tuned on current data (Dataset 2) without a full retrain.
+
+    ### Feature Importance
+    Feature importance was estimated using the linear weights of the SVM models. While these weights identified key contributors to predictions, the model struggled with the extreme class imbalance and non-linear relationships in the data, resulting in low baseline F1-scores across most targets.
+
+    ### Model Complexity
+    Tuning the regularization parameter (alpha) highlighted a clear bias-variance tradeoff. High alpha values led to severe underfitting (high bias), while lower values improved training performance. However, the linear nature of the SVM remained a structural constraint for this complex tabular healthcare data.
+
+    ### Data Drift & Continual Learning
+    Baseline performance remained relatively consistent between the historical and current datasets, confirming that data drift was minimal. Despite this stability, the continual learning strategy was highly effective; fine-tuning with partial_fit significantly improved ROC-AUC and calibration for several targets (notably Obesity and Anemia), demonstrating the value of incremental updates.
+
+    ### Summary of Findings
+    The SVM's primary strength is its adaptability. Although linear classifiers face high bias in imbalanced settings, the success of the continual learning strategy shows that SVMs can effectively bridge the gap between historical training and current clinical data.
+
+    """)
     # 
 
     set_section("decision_tree")
-    # %% [markdown]
-    # ## 6. Decision Tree Classification — Full Pipeline
-    # 
+    # Decision Tree Classification — Full Pipeline
     # Train Decision Trees on Dataset 1's train split, evaluate on Dataset 1 test **and**
     # Dataset 2 (temporal generalisation), then analyse complexity, bias-variance
     # trade-offs and feature importances.
     # 
-
-    # %%
 
     sns.set_theme(style='whitegrid')
     plt.rcParams['figure.figsize'] = (14, 6)
@@ -866,11 +782,8 @@ def run_pipeline():
     #print('Imports OK')
 
 
-    # %% [markdown]
-    # ### 6.1 Preprocessing — Imputation, Encoding & Temporal Split
-    # 
+    # Preprocessing: Imputation, Encoding & Temporal Split
 
-    # %%
     # Ensure temporal split exists
     final_df['last_visit_date'] = pd.to_datetime(final_df['last_visit_date'], errors='coerce')
     split_date = final_df['last_visit_date'].quantile(0.7)
@@ -896,8 +809,6 @@ def run_pipeline():
     })
     add_dataframe(config_info)
 
-
-    # %%
     def prepare_Xy(df, feat_cols, tgt_cols, cat_cols, label_encoders=None, fit=True):
         X = df[feat_cols].copy()
         y = df[tgt_cols].fillna(0).astype(int)
@@ -936,12 +847,7 @@ def run_pipeline():
     })
     add_dataframe(split_dims)
 
-
-    # %% [markdown]
-    # ### 6.2 Train Default Decision Tree & Evaluate on Both Test Sets
-    # 
-
-    # %%
+    # Train Default Decision Tree & Evaluate on Both Test Set
 
     def eval_multilabel(model, X, y_true, split_name):
         y_pred = model.predict(X)
@@ -998,8 +904,6 @@ def run_pipeline():
     add_text("### Tuned Decision Tree Results")
     add_dataframe(pd.DataFrame([r_d1, r_d2]))
 
-
-    # %%
     n_t = len(TARGET_COLS)
     fig, axes = plt.subplots(2, n_t, figsize=(4*n_t, 8))
     fig.suptitle('Confusion Matrices — Default Decision Tree', fontsize=14, fontweight='bold')
@@ -1021,7 +925,6 @@ def run_pipeline():
     # plt.show()
     add_plot(fig)
 
-    # %%
     for split_name, yt, yp in [
         ('D1 Test', y_test1, y_pred_d1),
         ('D2 Test (temporal)', y_test2, y_pred_d2),
@@ -1037,13 +940,8 @@ def run_pipeline():
             report_df = pd.DataFrame(report).transpose()
             add_dataframe(report_df.round(4))
 
-    # %% [markdown]
-    # ### 6.3 Model Complexity & Bias-Variance Trade-off
-    # 
-    # Sweep `max_depth` 1–15, tracking macro-F1 on D1-test and D2-test.
-    # 
-
-    # %%
+    # Model Complexity & Bias-Variance Trade-off
+    # Sweep `max_depth` 1-15, tracking macro-F1 on D1-test and D2-test.
     depths, d1_f1s, d2_f1s = [], [], []
 
     def macro_f1(m, X, y):
@@ -1074,8 +972,6 @@ def run_pipeline():
     })
     add_text(cdf.round(4).to_string(index=False))
 
-
-    # %%
     best_depth = depths[int(np.argmax(d1_f1s))]
     add_text(f'Best max_depth (by D1-test F1): {best_depth}')
 
@@ -1089,14 +985,9 @@ def run_pipeline():
     add_text(f"### Best Decision Tree Evaluation (max_depth={best_depth})")
     add_dataframe(best_df)
 
-
-    # %% [markdown]
-    # ### 6.4 Feature Importance — Model Interpretation
-    # 
+    # Feature Importance — Model Interpretation
     # Gini-based importances per label, aggregated globally and displayed per-disease as a heatmap.
-    # 
 
-    # %%
     fi_dict = {tgt.replace('TARGET_',''):dt_best.estimators_[i].feature_importances_
             for i,tgt in enumerate(TARGET_COLS)}
     fi_df = pd.DataFrame(fi_dict, index=FEATURE_COLS)
@@ -1117,8 +1008,6 @@ def run_pipeline():
     add_text("#### Top 20 Global Feature Importances")
     add_dataframe(top20['mean_importance'].round(5).reset_index().rename(columns={"index": "Feature", "mean_importance": "Importance"}))
 
-
-    # %%
     disease_names = [t.replace('TARGET_','') for t in TARGET_COLS]
 
     all_top_set = set()
@@ -1136,7 +1025,6 @@ def run_pipeline():
     # plt.show()
     add_plot(fig)
 
-    # %%
     # Visualise a shallow tree for the first target
     first_lbl = TARGET_COLS[0].replace('TARGET_','')
     dt_viz = DecisionTreeClassifier(max_depth=3, random_state=42)
@@ -1153,20 +1041,18 @@ def run_pipeline():
 
     add_text("### Summary of Decision Tree Findings")
     summary_data = [
-        ["Preprocessing", "Median imputation → Label-encoding → StandardScaler"],
+        ["Preprocessing", "Median imputation -> Label-encoding -> StandardScaler"],
         ["Underfitting", "depth 1-2: high bias, low train & test F1"],
-        ["Overfitting", "depth ≥7: train F1 ≈ 1.0, test F1 plateaus or drops"],
-        ["Best depth", "Chosen by D1-test F1 — best balance of bias & variance"],
+        ["Overfitting", "depth >= 7: train F1 ≈ 1.0, test F1 plateaus or drops"],
+        ["Best depth", "Chosen by D1-test F1 - best balance of bias & variance"],
         ["Temporal gap", "D2-test F1 < D1-test F1, confirming distribution shift over time"],
         ["Top features", "BMI, SBP, DBP, Glucose, HbA1c, Age dominate"],
-        ["Clinical insight", "High BMI/Glucose predicts Obesity/Diabetes; elevated SBP → Hypertension"]
+        ["Clinical insight", "High BMI/Glucose predicts Obesity/Diabetes; elevated SBP -> Hypertension"]
     ]
     summary_df = pd.DataFrame(summary_data, columns=["Aspect", "Key Observation"])
     add_dataframe(summary_df)
-    # 
 
-    # %%
-    # Metrics bar chart — best DT across all splits
+    # Metrics bar chart - best DT across all splits
     mlong = best_df.melt(id_vars='split',
                         value_vars=['accuracy','precision','recall','f1'],
                         var_name='metric', value_name='score')
@@ -1185,22 +1071,18 @@ def run_pipeline():
     # plt.show()
     add_plot(fig)
 
-
-    # %% [markdown]
-    # ### 6.6 Continual Learning
-
-    # %%
+    # Continual Learning
     from sklearn.base import clone
 
     add_text("### Retraining on Combined Data (Dataset 1 Train + Dataset 2 Train)")
 
-    # 1. Split Dataset 2 into train and test sets (using the same 80/20 split)
+    # Split Dataset 2 into train and test sets (using the same 80/20 split)
     d2_train_df, d2_test_df = train_test_split(dataset2, test_size=0.2, random_state=42)
 
-    # 2. Combine Dataset 1 and Dataset 2 training dataframes
+    # Combine Dataset 1 and Dataset 2 training dataframes
     combined_train_df = pd.concat([d1_train_df, d2_train_df], ignore_index=True)
 
-    # 3. Prepare features and targets (Re-fitting label encoders on combined data)
+    # Prepare features and targets (Re-fitting label encoders on combined data)
     X_train_comb, y_train_comb, les_comb = prepare_Xy(
         combined_train_df, FEATURE_COLS, TARGET_COLS, CAT_COLS, fit=True
     )
@@ -1210,12 +1092,12 @@ def run_pipeline():
         d2_test_df, FEATURE_COLS, TARGET_COLS, CAT_COLS, label_encoders=les_comb, fit=False
     )
 
-    # 4. Impute missing values (Re-fitting imputer on combined training data)
+    # Impute missing values (Re-fitting imputer on combined training data)
     imputer_comb = SimpleImputer(strategy='median')
     X_train_comb_imp = pd.DataFrame(imputer_comb.fit_transform(X_train_comb), columns=FEATURE_COLS)
     X_test2_comb_imp = pd.DataFrame(imputer_comb.transform(X_test2_comb), columns=FEATURE_COLS)
 
-    # 5. Scale features (Re-fitting scaler on combined training data)
+    # Scale features (Re-fitting scaler on combined training data)
     scaler_comb = StandardScaler()
     X_train_comb_sc = pd.DataFrame(scaler_comb.fit_transform(X_train_comb_imp), columns=FEATURE_COLS)
     X_test2_comb_sc = pd.DataFrame(scaler_comb.transform(X_test2_comb_imp), columns=FEATURE_COLS)
@@ -1227,15 +1109,15 @@ def run_pipeline():
     })
     add_dataframe(comb_info)
 
-    # 6. Clone the previous model (If you used the GridSearchCV earlier, this clones the best estimator)
+    # Clone the previous model (If you used the GridSearchCV earlier, this clones the best estimator)
     # If 'best_dt' is not defined from the previous step, replace 'best_dt' with 'dt_base'
     dt_combined = clone(best_dt)
 
-    # 7. Retrain the model on the combined data
+    # Retrain the model on the combined data
     add_text("\nRetraining the model on combined training data...")
     dt_combined.fit(X_train_comb_sc, y_train_comb)
 
-    # 8. Evaluate strictly on Dataset 2's test set
+    # Evaluate strictly on Dataset 2's test set
     r_d2_comb, y_pred_d2_comb = eval_multilabel(dt_combined, X_test2_comb_sc, y_test2_comb, 'Test (D2 Combined)')
 
     add_text("### Retrained Decision Tree Performance Metrics")
@@ -1243,30 +1125,68 @@ def run_pipeline():
 
     # --- Continual Learning Section for dashboard.py ---
 
-    add_text("## Task 4: Continual Learning Implementation (Decision Tree Excluded)")
+    add_text("## Continual Learning")
 
     add_text("""
+    Continual learning isn’t feasible in a standard decision tree classifier because, once the tree is built, its structure becomes fixed and cannot adapt to new data.
 
-Task 4 requires implementing a continual learning strategy by using the model trained on Dataset 1 as an "initial checkpoint" to be fine-tuned on Dataset 2. While this is highly effective for parametric models that use gradient descent (such as Neural Networks and certain SVM implementations), **it is not algorithmically possible for a standard, single Decision Tree.**
+    In scikit-learn, the DecisionTreeClassifier builds its structure using a greedy, top-down approach. Once the splits are calculated and the tree is grown on Dataset 1, its internal mathematical structure is permanently locked. The algorithm lacks a partial_fit method because there are no weights to incrementally update.
 
-In scikit-learn, the DecisionTreeClassifier builds its structure using a greedy, top-down approach. Once the splits are calculated and the tree is grown on Dataset 1, its internal mathematical structure is permanently locked. The algorithm lacks a partial_fit() method because there are no weights to incrementally update. 
+    Attempting to fit new data (Dataset 2) to an existing Decision Tree will result in catastrophic forgetting, as the .fit() method will completely discard the Dataset 1 checkpoint and train a brand-new tree from scratch. Because a true "checkpoint and fine-tune" strategy cannot be applied to this specific algorithm, the continual learning step is intentionally omitted for the Decision Tree pipeline, and will be demonstrated instead in the Neural Network and SVM sections of this project.
+    """)
 
-Attempting to fit new data (Dataset 2) to an existing Decision Tree will result in catastrophic forgetting, as the .fit() method will completely discard the Dataset 1 checkpoint and train a brand-new tree from scratch. Because a true "checkpoint and fine-tune" strategy cannot be applied to this specific algorithm, the continual learning step is intentionally omitted for the Decision Tree pipeline, and will be demonstrated instead in the Neural Network and SVM sections of this project.
-""")
+    add_text("""
+    ## Model Insights
+    ### Feature Importance
+
+    Feature importance was estimated using Mean Gini Importance. The model identified strong clinical indicators, with resp_rate_std, hba1c_std, and bmi_std dominating predictions.
+
+    The feature-per-label heatmap further confirmed that the model learned clinically meaningful relationships; for instance, hba1c_mean was most influential for Diabetes, while bmi_mean was strongly associated with Obesity.
+
+    However, for diseases with extremely low prevalence, such as Heart Disease and Kidney Disease, the importance scores were negligible. This reflects the inherent challenge of learning from sparse labels in healthcare datasets.
+
+    ### Model Complexity
+
+    The decision tree exhibited the classic bias–variance trade-off controlled by the max_depth parameter:
+
+    Low depths (1-2): High bias, leading to underfitting
+    High depths (>= 7): Near-perfect training F1 (~1.0) but degraded test performance due to overfitting
+
+    Hyperparameter tuning identified max_depth = 3 with balanced class weights as the optimal configuration. This setting prioritizes recall, which is critical in clinical applications where missing positive cases is costly.
+
+    ### Data Drift
+
+    A clear performance degradation was observed between Dataset 1 and Dataset 2. The Macro F1 score dropped from 0.042 to 0.029, even at the optimal depth.
+
+    This indicates the presence of distribution shift over time. While the decision tree retained internally consistent decision rules, changes in patient characteristics reduced the effectiveness of splits learned from earlier data.
+
+    ### Continual Learning
+
+    The standard DecisionTreeClassifier functions as a static batch learner. Unlike neural networks, it does not support incremental updates or fine-tuning with new data.
+
+    To adapt to data drift, the model must be fully retrained on the combined dataset. While this ensures stability and prevents catastrophic forgetting, it limits adaptability, making the model susceptible to obsolescence as clinical patterns evolve.
+
+    ### Key Insights
+    - High interpretability: Root-level splits align with clinically relevant biomarkers (e.g., HbA1c, BMI)
+    - Shallow trees perform best: Depth = 3 balances generalization and minority class detection
+    - Static learning paradigm: No support for incremental or continual updates
+    - Sensitivity to temporal drift: Performance declines on future data distributions
+    - Importance of class weighting: Essential for detecting minority class cases in imbalanced datasets
+    """)
 
     add_text("---") # Optional visual separator
 
-    # %%
+
+    # nn
+    set_section("neural_network")
     final_df.to_csv("final_dataset.csv", index=False)
 
-    # %%
     features = [col for col in final_df.columns]
     num_cols = final_df[features].select_dtypes(include=[np.number]).columns
     cat_cols = final_df[features].select_dtypes(exclude=[np.number]).columns
     feature_cols=[col for col in final_df.columns if not col in target_cols]
     # num_cols, cat_cols
 
-    # %%
     X1 = dataset1[feature_cols].copy()
     X2 = dataset2[feature_cols].copy()
     y1 = dataset1[target_cols].copy()
@@ -1282,30 +1202,24 @@ Attempting to fit new data (Dataset 2) to an existing Decision Tree will result 
     # X1, X2, y1, y2
 
 
-    # %%
     num_cols = X1.select_dtypes(include=[np.number]).columns
     num_means = X1[num_cols].mean()
 
     X1[num_cols] = X1[num_cols].fillna(num_means)
     X2[num_cols] = X2[num_cols].fillna(num_means)
 
-    # %%
     cat_cols = X1.select_dtypes(exclude=[np.number]).columns
     cat_modes = X1[cat_cols].mode().iloc[0]
 
     X1[cat_cols] = X1[cat_cols].fillna(cat_modes)
     X2[cat_cols] = X2[cat_cols].fillna(cat_modes)
 
-    # %%
     X1 = pd.get_dummies(X1, columns=cat_cols)
     X2 = pd.get_dummies(X2, columns=cat_cols)
 
     X1, X2 = X1.align(X2, join="left", axis=1, fill_value=0)
 
-    # %%
     # X1, X2, y1, y2
-
-    # %%
     def relu(z):
         return np.maximum(0, z)
 
@@ -1343,7 +1257,6 @@ Attempting to fit new data (Dataset 2) to an existing Decision Tree will result 
 
         return W1, b1, W2, b2, W3, b3
 
-    # %%
     def compute_loss(y, y_pred):
         eps = 1e-8
 
@@ -1358,7 +1271,6 @@ Attempting to fit new data (Dataset 2) to an existing Decision Tree will result 
 
         return np.mean(loss)
 
-    # %%
     def backward(X, y, z1, a1, z2, a2, z3, a3, W2, W3):
         m = X.shape[0]
         pos_counts = y.sum(axis=0)
@@ -1379,7 +1291,6 @@ Attempting to fit new data (Dataset 2) to an existing Decision Tree will result 
 
         return dW1, db1, dW2, db2, dW3, db3
 
-    # %%
     def train_mlp(X, y, epochs=1000, lr=0.003):
 
         n_input = X.shape[1]
@@ -1414,7 +1325,6 @@ Attempting to fit new data (Dataset 2) to an existing Decision Tree will result 
 
         return W1, b1, W2, b2, W3, b3
 
-    # %%
     def train_test_split_scratch(X, y, test_size=0.2, shuffle=True, seed=42):
 
         np.random.seed(seed)
@@ -1438,7 +1348,6 @@ Attempting to fit new data (Dataset 2) to an existing Decision Tree will result 
 
         return X_train, X_test, y_train, y_test
 
-    # %%
     def predict(X, W1, b1, W2, b2, W3, b3, thresholds):
         _, _, _, _, _, a3 = forward(X, W1, b1, W2, b2, W3, b3)
 
@@ -1451,7 +1360,6 @@ Attempting to fit new data (Dataset 2) to an existing Decision Tree will result 
     def clip_gradients(dW, threshold=5):
         return np.clip(dW, -threshold, threshold)
 
-    # %%
     X1_train, X1_test, y1_train, y1_test = train_test_split_scratch(X1.values, y1.values)
     X2_train, X2_test, y2_train, y2_test = train_test_split_scratch(X2.values, y2.values)
     valid = np.where(y1_train.sum(axis=0) >= 10)[0]
@@ -1461,7 +1369,6 @@ Attempting to fit new data (Dataset 2) to an existing Decision Tree will result 
     y2_train = y2_train[:, valid]
     y2_test  = y2_test[:, valid]
 
-    # %%
     X1_train = X1_train.astype(np.float64)
     X1_test  = X1_test.astype(np.float64)
 
@@ -1474,7 +1381,6 @@ Attempting to fit new data (Dataset 2) to an existing Decision Tree will result 
     y2_train = y2_train.astype(np.float64)
     y2_test  = y2_test.astype(np.float64)
     
-    #%%
     X_mean = X1_train.mean(axis=0)
     X_std = X1_train.std(axis=0) + 1e-8
 
@@ -1483,7 +1389,6 @@ Attempting to fit new data (Dataset 2) to an existing Decision Tree will result 
     X2_train = (X2_train - X_mean) / X_std
     X2_test  = (X2_test - X_mean) / X_std
     
-    # %%
     W1, b1, W2, b2, W3, b3 = train_mlp(X1_train, y1_train)
     all_probs = predict_prob(X1_train, W1, b1, W2, b2, W3, b3)
 
@@ -1522,7 +1427,6 @@ Attempting to fit new data (Dataset 2) to an existing Decision Tree will result 
     y1_pred = predict(X1_test, W1, b1, W2, b2, W3, b3, thresholds)
     y2_pred = predict(X2_test, W1, b1, W2, b2, W3, b3, thresholds)
 
-    # %%
     def accuracy(y_true, y_pred):
         return np.mean(y_true != y_pred)
 
@@ -1550,8 +1454,6 @@ Attempting to fit new data (Dataset 2) to an existing Decision Tree will result 
         return np.mean(precisions), np.mean(recalls), np.mean(f1s)
 
 
-
-    # %%
     # Dataset1
     acc1 = accuracy(y1_test, y1_pred)
     p1, r1, f1_1 = precision_recall_f1(y1_test, y1_pred)
@@ -1568,7 +1470,6 @@ Attempting to fit new data (Dataset 2) to an existing Decision Tree will result 
     add_text("#### Neural Network Performance Metrics")
     add_dataframe(nn_metrics.round(4))
 
-    # %%
     add_text("#### Target Distribution in Training Data (Positive Counts)")
     counts_df = pd.DataFrame({
         "Target": active_nn_target_cols,
@@ -1578,8 +1479,6 @@ Attempting to fit new data (Dataset 2) to an existing Decision Tree will result 
     y_prob = predict_prob(X1_test, W1, b1, W2, b2, W3, b3)
 
     add_text(f"Probability distributions in test predictions — Max: {y_prob.max():.4f}, Mean: {y_prob.mean():.4f}")
-
-    # %%
 
     y1_prob = predict_prob(X1_test, W1, b1, W2, b2, W3, b3)
 
@@ -1600,7 +1499,6 @@ Attempting to fit new data (Dataset 2) to an existing Decision Tree will result 
     fig = plt.gcf()
     add_plot(fig)
 
-    # %%
     y2_prob = predict_prob(X2_test, W1, b1, W2, b2, W3, b3)
 
     plt.figure(figsize=(8, 6))
@@ -1620,7 +1518,6 @@ Attempting to fit new data (Dataset 2) to an existing Decision Tree will result 
     fig = plt.gcf()
     add_plot(fig)
 
-    # %%
     def train_mlp_continue(X, y, W1, b1, W2, b2, W3, b3, epochs=200, lr=0.0001):
 
         for epoch in range(epochs):
@@ -1648,7 +1545,6 @@ Attempting to fit new data (Dataset 2) to an existing Decision Tree will result 
 
         return W1, b1, W2, b2, W3, b3
 
-    # %%
     W1_c, b1_c, W2_c, b2_c, W3_c, b3_c = train_mlp_continue(
         X2_train, y2_train,
         W1, b1, W2, b2, W3, b3,
@@ -1683,7 +1579,6 @@ Attempting to fit new data (Dataset 2) to an existing Decision Tree will result 
     thresholds_new = np.array(thresholds_new)
     y2_pred_new = predict(X2_test, W1_c, b1_c, W2_c, b2_c, W3_c, b3_c, thresholds_new)
 
-    # %%
     acc2_new = accuracy(y2_test, y2_pred_new)
     p2_new, r2_new, f2_new = precision_recall_f1(y2_test, y2_pred_new)
 
@@ -1694,10 +1589,8 @@ Attempting to fit new data (Dataset 2) to an existing Decision Tree will result 
     })
     add_dataframe(cl_nn_metrics.round(4))
 
-    # %%
     # y2_pred_new.sum()
 
-    # %%
     y2_prob_new = predict_prob(X2_test, W1_c, b1_c, W2_c, b2_c, W3_c, b3_c)
 
     plt.figure(figsize=(8, 6))
@@ -1717,7 +1610,6 @@ Attempting to fit new data (Dataset 2) to an existing Decision Tree will result 
     fig = plt.gcf()
     add_plot(fig)
 
-    # %%
     def feature_importance(W1):
         # absolute weights summed across neurons
         importance = np.sum(np.abs(W1), axis=1)
@@ -1754,6 +1646,28 @@ Attempting to fit new data (Dataset 2) to an existing Decision Tree will result 
     plot_single_confusion(y1_test, y1_pred)
     plot_single_confusion(y2_test, y2_pred_new)
 
+    add_text("## Model Insights")
+    add_text("""
+    ### Feature Importance
+    Feature importance was estimated using input layer weights. The model identified a few dominant features contributing significantly to predictions, indicating meaningful pattern learning. However, for diseases with very few positive samples, feature importance was weak and unreliable. This highlights the impact of class imbalance and sparse labels in healthcare data.
+
+    ### Model Complexity
+    The neural network captured non-linear relationships but was highly sensitive to preprocessing and data quality. Without feature scaling, the model collapsed to constant predictions. After normalization, performance improved significantly. However, compared to simpler models (Decision Trees, SVM), the neural network showed higher variance and required more tuning, indicating that higher complexity does not guarantee better performance on small, tabular datasets.
+
+    ### Data Drift
+    A noticeable performance drop was observed when testing on Dataset 2, indicating distribution shift. Differences in patient characteristics and disease prevalence affected model generalization. Although ROC curves showed some retained predictive signal, overall calibration degraded, demonstrating that models trained on historical healthcare data may not generalize well to new data.
+
+    ### Continual Learning
+    Fine-tuning the model on Dataset 2 showed limited improvement. In some cases, performance degraded due to catastrophic forgetting and weak data signals. Adjustments like lower learning rates and partial updates improved stability but did not fully resolve the issue. This shows that continual learning is challenging in imbalanced, low-data settings.
+
+    ### Key Insights
+    - Feature scaling is critical for neural networks
+    - Class imbalance heavily affects performance
+    - Simpler models can outperform neural networks on tabular data
+    - Data drift reduces generalization
+    - Continual learning requires careful balancing of stability and adaptation
+    """)
+
 
 
 if "results_cache" not in st.session_state:
@@ -1767,16 +1681,16 @@ else:
 
 
 def render_home_section():
-    st.title("Healthcare Disease Prediction Dashboard")
+    st.title("Healthcare Disease Prediction Dashboard - Group 11")
     st.write(
         "Use the sidebar to switch between Home, Data Processing, and Misc sections."
     )
 
-    st.subheader("Group Member Details")
+    st.subheader("Group 11 Member Details")
     group_members_df = pd.DataFrame(
         {
-            "Name": ["Member 1", "Member 2", "Member 3", "Member 4"],
-            "ID": ["ID001", "ID002", "ID003", "ID004"],
+            "Name": ["S Vishwa Kalyan Reddy", "Sri Harshita Manuri", "M Adithya Krishna", "Pritham Kumar Jena"],
+            "ID": ["2023AAPS0258H", "2023A3PS1374H", "2023A7PS0144H", "2023A8PS1308H"],
         }
     )
     st.table(group_members_df)
@@ -1794,7 +1708,7 @@ def render_section(section_name):
 
 
 
-st.sidebar.title("Controls")
+st.sidebar.title("Navbar")
 section = st.sidebar.radio("Navigate", ["Home", "Data Processing", "SVM", "Decision Tree", "Neural Network"])
 
 # Scroll to top when section changes
